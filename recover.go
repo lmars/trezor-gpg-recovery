@@ -1,10 +1,13 @@
 package recovery
 
 import (
+	"encoding/hex"
 	"fmt"
 	"io"
 	"os"
+	"strings"
 
+	bip39 "github.com/tyler-smith/go-bip39"
 	"golang.org/x/crypto/ssh/terminal"
 )
 
@@ -79,14 +82,14 @@ func (r *Recovery) run() error {
 	if r.isInteractive {
 		r.log("Please enter your %d word recovery seed (hit ctrl-c to exit):", r.seedLength)
 	}
-	seed := make([]string, r.seedLength)
+	seedWords := make([]string, r.seedLength)
 	for i := 0; i < r.seedLength; i++ {
 		prompt := fmt.Sprintf("%2d: ", i+1)
 		word, err := r.readLine(prompt)
 		if err != nil {
 			return err
 		}
-		seed[i] = word
+		seedWords[i] = word
 	}
 
 	// prompt for a passphrase
@@ -99,7 +102,14 @@ func (r *Recovery) run() error {
 		}
 	}
 
-	fmt.Fprintln(r.stdout, append(seed, passphrase))
+	// generate seed
+	mnemonic := strings.Join(seedWords, " ")
+	seed, err := bip39.NewSeedWithErrorChecking(mnemonic, passphrase)
+	if err != nil {
+		return err
+	}
+
+	fmt.Fprintln(r.stdout, hex.EncodeToString(seed))
 
 	return nil
 }

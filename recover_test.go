@@ -2,31 +2,16 @@ package recovery
 
 import (
 	"bytes"
-	"fmt"
 	"strings"
 	"testing"
 )
 
 func TestRecovery(t *testing.T) {
-	for _, length := range []int{12, 18, 24} {
-		t.Run(fmt.Sprintf("seed length %d", length), func(t *testing.T) {
-			testRecoveryWithSeedLength(t, length)
-		})
-	}
-}
-
-func testRecoveryWithSeedLength(t *testing.T, seedLength int) {
-	seed := make([]string, seedLength)
-	for i := 0; i < seedLength; i++ {
-		seed[i] = "all"
-	}
-	passphrase := "s3cr3t"
-
-	stdin := strings.NewReader(strings.Join(append(seed, passphrase), "\n"))
+	stdin := strings.NewReader("all\nall\nall\nall\nall\nall\nall\nall\nall\nall\nall\nall\ns3cr3t")
 	var stdout, stderr bytes.Buffer
 
 	if err := Run(
-		WithSeedLength(seedLength),
+		WithSeedLength(12),
 		UsePassphrase(true),
 		WithStdin(stdin),
 		WithStdout(&stdout),
@@ -35,7 +20,7 @@ func testRecoveryWithSeedLength(t *testing.T, seedLength int) {
 		t.Fatal(err)
 	}
 
-	expected := fmt.Sprintln(append(seed, passphrase))
+	expected := "554bf29ce4a20616e16d3dbe7d4c733dfc6cbd7769648d8985f1735ab74ce635b09edc3971f111aede79827e7bde14c3e4b30066ae4bede2070fc7f1ad3c12cb\n"
 	if stdout.String() != expected {
 		t.Fatalf("unexpected output\nexpected: %s\nactual:   %s", expected, stdout.String())
 	}
