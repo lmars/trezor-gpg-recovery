@@ -20,12 +20,14 @@ func testRecoveryWithSeedLength(t *testing.T, seedLength int) {
 	for i := 0; i < seedLength; i++ {
 		seed[i] = "all"
 	}
+	passphrase := "s3cr3t"
 
-	stdin := strings.NewReader(strings.Join(seed, "\n"))
+	stdin := strings.NewReader(strings.Join(append(seed, passphrase), "\n"))
 	var stdout, stderr bytes.Buffer
 
 	if err := Run(
 		WithSeedLength(seedLength),
+		UsePassphrase(true),
 		WithStdin(stdin),
 		WithStdout(&stdout),
 		WithStderr(&stderr),
@@ -33,7 +35,7 @@ func testRecoveryWithSeedLength(t *testing.T, seedLength int) {
 		t.Fatal(err)
 	}
 
-	expected := fmt.Sprintln(seed)
+	expected := fmt.Sprintln(append(seed, passphrase))
 	if stdout.String() != expected {
 		t.Fatalf("unexpected output\nexpected: %s\nactual:   %s", expected, stdout.String())
 	}

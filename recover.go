@@ -39,6 +39,7 @@ type Recovery struct {
 	stderr        io.Writer
 	seedLength    int
 	isInteractive bool
+	usePassphrase bool
 }
 
 type Option func(*Recovery)
@@ -46,6 +47,12 @@ type Option func(*Recovery)
 func WithSeedLength(seedLength int) Option {
 	return func(r *Recovery) {
 		r.seedLength = seedLength
+	}
+}
+
+func UsePassphrase(usePassphrase bool) Option {
+	return func(r *Recovery) {
+		r.usePassphrase = usePassphrase
 	}
 }
 
@@ -74,14 +81,25 @@ func (r *Recovery) run() error {
 	}
 	seed := make([]string, r.seedLength)
 	for i := 0; i < r.seedLength; i++ {
-		word, err := r.readWord(i + 1)
+		prompt := fmt.Sprintf("%2d: ", i+1)
+		word, err := r.readLine(prompt)
 		if err != nil {
 			return err
 		}
 		seed[i] = word
 	}
 
-	fmt.Fprintln(r.stdout, seed)
+	// prompt for a passphrase
+	var passphrase string
+	if r.usePassphrase {
+		var err error
+		passphrase, err = r.readLine("Please enter your passphrase: ")
+		if err != nil {
+			return err
+		}
+	}
+
+	fmt.Fprintln(r.stdout, append(seed, passphrase))
 
 	return nil
 }
@@ -90,13 +108,13 @@ func (r *Recovery) log(format string, args ...interface{}) {
 	fmt.Fprintln(r.stderr, fmt.Sprintf(format, args...))
 }
 
-func (r *Recovery) readWord(num int) (string, error) {
+func (r *Recovery) readLine(prompt string) (string, error) {
 	if r.isInteractive {
-		fmt.Fprintf(r.stderr, "%2d: ", num)
+		fmt.Fprintf(r.stderr, prompt)
 	}
-	var word string
-	_, err := fmt.Fscanln(r.stdin, &word)
-	return word, err
+	var line string
+	_, err := fmt.Fscanln(r.stdin, &line)
+	return line, err
 }
 
 var validSeedLengths = []int{12, 18, 24}

@@ -16,6 +16,12 @@ var seedLength = flag.Int(
 	fmt.Sprintf("Length of the Recovery Seed (default: %d)", recovery.DefaultSeedLength),
 )
 
+var usePassphrase = flag.Bool(
+	"pass",
+	false,
+	"Prompt for a passphrase (default: false)",
+)
+
 func main() {
 	flag.Parse()
 
@@ -37,5 +43,6 @@ func run() error {
 	// run recovery
 	return recovery.Run(
 		recovery.WithSeedLength(*seedLength),
+		recovery.UsePassphrase(*usePassphrase),
 	)
 }
