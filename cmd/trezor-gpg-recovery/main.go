@@ -1,6 +1,7 @@
 package main
 
 import (
+	"flag"
 	"fmt"
 	"os"
 	"os/signal"
@@ -9,7 +10,15 @@ import (
 	recovery "github.com/lmars/trezor-gpg-recovery"
 )
 
+var seedLength = flag.Int(
+	"len",
+	recovery.DefaultSeedLength,
+	fmt.Sprintf("Length of the Recovery Seed (default: %d)", recovery.DefaultSeedLength),
+)
+
 func main() {
+	flag.Parse()
+
 	if err := run(); err != nil {
 		fmt.Fprintln(os.Stderr, "ERROR:", err)
 		os.Exit(1)
@@ -26,5 +35,7 @@ func run() error {
 	}()
 
 	// run recovery
-	return recovery.Run()
+	return recovery.Run(
+		recovery.WithSeedLength(*seedLength),
+	)
 }

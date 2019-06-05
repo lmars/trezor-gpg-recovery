@@ -8,16 +8,24 @@ import (
 	"golang.org/x/crypto/ssh/terminal"
 )
 
+// DefaultSeedLength is the default value for the expected length of the
+// recovery seed.
+const DefaultSeedLength = 24
+
 // Run recovers a Trezor GPG identity by reading a recovery seed from stdin and
 // writing the resulting identity to stdout.
 func Run(opts ...Option) error {
 	r := &Recovery{
-		stdin:  os.Stdin,
-		stdout: os.Stdout,
-		stderr: os.Stderr,
+		stdin:      os.Stdin,
+		stdout:     os.Stdout,
+		stderr:     os.Stderr,
+		seedLength: DefaultSeedLength,
 	}
 	for _, opt := range opts {
 		opt(r)
+	}
+	if err := r.validate(); err != nil {
+		return err
 	}
 	if f, ok := r.stdin.(*os.File); ok && terminal.IsTerminal(int(f.Fd())) {
 		r.isInteractive = true
@@ -29,10 +37,17 @@ type Recovery struct {
 	stdin         io.Reader
 	stdout        io.Writer
 	stderr        io.Writer
+	seedLength    int
 	isInteractive bool
 }
 
 type Option func(*Recovery)
+
+func WithSeedLength(seedLength int) Option {
+	return func(r *Recovery) {
+		r.seedLength = seedLength
+	}
+}
 
 func WithStdin(stdin io.Reader) Option {
 	return func(r *Recovery) {
@@ -55,10 +70,10 @@ func WithStderr(stderr io.Writer) Option {
 func (r *Recovery) run() error {
 	// prompt for the recovery seed
 	if r.isInteractive {
-		r.log("Please enter your 24 word recovery seed (hit ctrl-c to exit):")
+		r.log("Please enter your %d word recovery seed (hit ctrl-c to exit):", r.seedLength)
 	}
-	seed := make([]string, 24)
-	for i := 0; i < 24; i++ {
+	seed := make([]string, r.seedLength)
+	for i := 0; i < r.seedLength; i++ {
 		word, err := r.readWord(i + 1)
 		if err != nil {
 			return err
@@ -82,4 +97,20 @@ func (r *Recovery) readWord(num int) (string, error) {
 	var word string
 	_, err := fmt.Fscanln(r.stdin, &word)
 	return word, err
+}
+
+var validSeedLengths = []int{12, 18, 24}
+
+func (r *Recovery) validate() error {
+	validSeedLength := false
+	for _, l := range validSeedLengths {
+		if r.seedLength == l {
+			validSeedLength = true
+			break
+		}
+	}
+	if !validSeedLength {
+		return fmt.Errorf("invalid seed length %d, must be one of %v", r.seedLength, validSeedLengths)
+	}
+	return nil
 }
