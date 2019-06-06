@@ -1,6 +1,7 @@
 package recovery
 
 import (
+	"bufio"
 	"crypto/ecdsa"
 	"crypto/elliptic"
 	"fmt"
@@ -37,11 +38,13 @@ func Run(opts ...Option) error {
 	if f, ok := r.stdin.(*os.File); ok && terminal.IsTerminal(int(f.Fd())) {
 		r.isInteractive = true
 	}
+	r.stdinScan = bufio.NewScanner(r.stdin)
 	return r.run()
 }
 
 type Recovery struct {
 	stdin         io.Reader
+	stdinScan     *bufio.Scanner
 	stdout        io.Writer
 	stderr        io.Writer
 	seedLength    int
@@ -82,6 +85,12 @@ func WithStderr(stderr io.Writer) Option {
 }
 
 func (r *Recovery) run() error {
+	// prompt for the user's ID
+	userID, err := r.readLine(`Please enter your GPG User ID (ex: "Alice <alice@example.com>"): `)
+	if err != nil {
+		return err
+	}
+
 	// prompt for the recovery seed
 	if r.isInteractive {
 		r.log("Please enter your %d word recovery seed (hit ctrl-c to exit):", r.seedLength)
@@ -120,7 +129,7 @@ func (r *Recovery) run() error {
 	}
 
 	// derive GPG primary and sub keys
-	uri := "gpg://test"
+	uri := "gpg://" + userID
 	primaryKey, err := r.ecdsaKey(masterKey, uri, false)
 	if err != nil {
 		return err
@@ -144,9 +153,8 @@ func (r *Recovery) readLine(prompt string) (string, error) {
 	if r.isInteractive {
 		fmt.Fprintf(r.stderr, prompt)
 	}
-	var line string
-	_, err := fmt.Fscanln(r.stdin, &line)
-	return line, err
+	r.stdinScan.Scan()
+	return r.stdinScan.Text(), r.stdinScan.Err()
 }
 
 var validSeedLengths = []int{12, 18, 24}

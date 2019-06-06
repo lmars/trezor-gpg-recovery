@@ -2,25 +2,32 @@ package recovery
 
 import (
 	"bytes"
-	"strings"
+	"fmt"
 	"testing"
 )
 
 func TestRecovery(t *testing.T) {
-	stdin := strings.NewReader("all\nall\nall\nall\nall\nall\nall\nall\nall\nall\nall\nall\ns3cr3t")
-	var stdout, stderr bytes.Buffer
+	var stdin, stdout, stderr bytes.Buffer
 
+	// enter the User ID:
+	fmt.Fprintln(&stdin, "Alice <alice@example.com>")
+	// enter a 12 work mnemonic:
+	fmt.Fprintln(&stdin, "all\nall\nall\nall\nall\nall\nall\nall\nall\nall\nall\nall")
+	// enter a passphrase:
+	fmt.Fprintln(&stdin, "s3cr3t")
+
+	// run the recovery
 	if err := Run(
 		WithSeedLength(12),
 		UsePassphrase(true),
-		WithStdin(stdin),
+		WithStdin(&stdin),
 		WithStdout(&stdout),
 		WithStderr(&stderr),
 	); err != nil {
 		t.Fatal(err)
 	}
 
-	expected := "53287669837134906825940750731645259835991168394122254945824146210865159709812\n110236669243376121194199083338596941870813721550167499664855109774406825623074\n"
+	expected := "86774768610136898273622707509188377053800737438658011629694106432640461915797\n103638615045368953345369873210273481442496506251330185938949065376181864001778\n"
 	if stdout.String() != expected {
 		t.Fatalf("unexpected output\nexpected: %s\nactual:   %s", expected, stdout.String())
 	}
