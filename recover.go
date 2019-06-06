@@ -1,12 +1,16 @@
 package recovery
 
 import (
-	"encoding/hex"
+	"crypto/ecdsa"
+	"crypto/elliptic"
 	"fmt"
 	"io"
+	"math/big"
 	"os"
 	"strings"
 
+	slip10 "github.com/lmars/go-slip10"
+	slip13 "github.com/lmars/go-slip13"
 	bip39 "github.com/tyler-smith/go-bip39"
 	"golang.org/x/crypto/ssh/terminal"
 )
@@ -109,7 +113,25 @@ func (r *Recovery) run() error {
 		return err
 	}
 
-	fmt.Fprintln(r.stdout, hex.EncodeToString(seed))
+	// generate SLIP10 master key
+	masterKey, err := slip10.NewMasterKeyWithCurve(seed, slip10.CurveP256)
+	if err != nil {
+		return err
+	}
+
+	// derive GPG primary and sub keys
+	uri := "gpg://test"
+	primaryKey, err := r.ecdsaKey(masterKey, uri, false)
+	if err != nil {
+		return err
+	}
+	subKey, err := r.ecdsaKey(masterKey, uri, true)
+	if err != nil {
+		return err
+	}
+
+	fmt.Fprintln(r.stdout, primaryKey.D)
+	fmt.Fprintln(r.stdout, subKey.D)
 
 	return nil
 }
@@ -141,4 +163,26 @@ func (r *Recovery) validate() error {
 		return fmt.Errorf("invalid seed length %d, must be one of %v", r.seedLength, validSeedLengths)
 	}
 	return nil
+}
+
+func (r *Recovery) ecdsaKey(masterKey *slip10.Key, uri string, ecdh bool) (*ecdsa.PrivateKey, error) {
+	// determine what purpose field to use
+	var purpose uint32 = slip13.Purpose
+	if ecdh {
+		purpose = 17
+	}
+
+	// derive the SLIP13 authentication key
+	key, err := slip13.DeriveWithPurpose(masterKey, purpose, uri, 0)
+	if err != nil {
+		return nil, err
+	}
+
+	// convert to an ecdsa.PrivateKey
+	curve := elliptic.P256()
+	priv := new(ecdsa.PrivateKey)
+	priv.PublicKey.Curve = curve
+	priv.D = new(big.Int).SetBytes(key.Key)
+	priv.PublicKey.X, priv.PublicKey.Y = curve.ScalarBaseMult(key.Key)
+	return priv, nil
 }

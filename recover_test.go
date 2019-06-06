@@ -20,7 +20,7 @@ func TestRecovery(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	expected := "554bf29ce4a20616e16d3dbe7d4c733dfc6cbd7769648d8985f1735ab74ce635b09edc3971f111aede79827e7bde14c3e4b30066ae4bede2070fc7f1ad3c12cb\n"
+	expected := "53287669837134906825940750731645259835991168394122254945824146210865159709812\n110236669243376121194199083338596941870813721550167499664855109774406825623074\n"
 	if stdout.String() != expected {
 		t.Fatalf("unexpected output\nexpected: %s\nactual:   %s", expected, stdout.String())
 	}
