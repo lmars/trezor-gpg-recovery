@@ -2,14 +2,22 @@ package recovery
 
 import (
 	"bufio"
+	"bytes"
+	"crypto"
 	"crypto/ecdsa"
 	"crypto/elliptic"
 	"fmt"
 	"io"
 	"math/big"
 	"os"
+	"strconv"
 	"strings"
+	"time"
 
+	"github.com/keybase/go-crypto/openpgp"
+	"github.com/keybase/go-crypto/openpgp/armor"
+	"github.com/keybase/go-crypto/openpgp/ecdh"
+	"github.com/keybase/go-crypto/openpgp/packet"
 	slip10 "github.com/lmars/go-slip10"
 	slip13 "github.com/lmars/go-slip13"
 	bip39 "github.com/tyler-smith/go-bip39"
@@ -91,6 +99,17 @@ func (r *Recovery) run() error {
 		return err
 	}
 
+	// prompt for the timestamp
+	timestampStr, err := r.readLine("Please enter the timestamp from the original 'trezor-gpg init' command: ")
+	if err != nil {
+		return err
+	}
+	timestampInt, err := strconv.ParseInt(timestampStr, 10, 64)
+	if err != nil {
+		return fmt.Errorf("could not parse timestamp: %s", err)
+	}
+	timestamp := time.Unix(timestampInt, 0)
+
 	// prompt for the recovery seed
 	if r.isInteractive {
 		r.log("Please enter your %d word recovery seed (hit ctrl-c to exit):", r.seedLength)
@@ -139,8 +158,60 @@ func (r *Recovery) run() error {
 		return err
 	}
 
-	fmt.Fprintln(r.stdout, primaryKey.D)
-	fmt.Fprintln(r.stdout, subKey.D)
+	// construct GPG identity
+	isPrimaryId := true
+	entity := &openpgp.Entity{
+		PrimaryKey: packet.NewECDSAPublicKey(timestamp, &primaryKey.PublicKey),
+		PrivateKey: packet.NewECDSAPrivateKey(timestamp, primaryKey),
+	}
+	entity.Identities = map[string]*openpgp.Identity{
+		userID: &openpgp.Identity{
+			Name:   userID,
+			UserId: &packet.UserId{Id: userID},
+			SelfSignature: &packet.Signature{
+				CreationTime: timestamp,
+				SigType:      packet.SigTypePositiveCert,
+				PubKeyAlgo:   packet.PubKeyAlgoECDSA,
+				Hash:         crypto.SHA256,
+				IsPrimaryId:  &isPrimaryId,
+				FlagsValid:   true,
+				FlagSign:     true,
+				FlagCertify:  true,
+				IssuerKeyId:  &entity.PrimaryKey.KeyId,
+			},
+		},
+	}
+	ecdhPubKey := ecdh.PublicKey{
+		Curve: subKey.PublicKey.Curve,
+		X:     subKey.PublicKey.X,
+		Y:     subKey.PublicKey.Y,
+	}
+	entity.Subkeys = []openpgp.Subkey{{
+		PublicKey: packet.NewECDHPublicKey(timestamp, &ecdhPubKey),
+		PrivateKey: packet.NewECDHPrivateKey(timestamp, &ecdh.PrivateKey{
+			PublicKey: ecdhPubKey,
+			X:         subKey.D,
+		}),
+		Sig: &packet.Signature{
+			CreationTime:              timestamp,
+			SigType:                   packet.SigTypeSubkeyBinding,
+			PubKeyAlgo:                packet.PubKeyAlgoECDSA,
+			Hash:                      crypto.SHA256,
+			FlagsValid:                true,
+			FlagEncryptStorage:        true,
+			FlagEncryptCommunications: true,
+			IssuerKeyId:               &entity.PrimaryKey.KeyId,
+		},
+	}}
+	entity.Subkeys[0].PublicKey.IsSubkey = true
+	entity.Subkeys[0].PrivateKey.IsSubkey = true
+
+	// print the ascii armored private key
+	privKey, err := r.serializePrivate(entity)
+	if err != nil {
+		return err
+	}
+	fmt.Fprintln(r.stdout, privKey)
 
 	return nil
 }
@@ -193,4 +264,18 @@ func (r *Recovery) ecdsaKey(masterKey *slip10.Key, uri string, ecdh bool) (*ecds
 	priv.D = new(big.Int).SetBytes(key.Key)
 	priv.PublicKey.X, priv.PublicKey.Y = curve.ScalarBaseMult(key.Key)
 	return priv, nil
+}
+
+func (r *Recovery) serializePrivate(entity *openpgp.Entity) (string, error) {
+	var out bytes.Buffer
+	enc, err := armor.Encode(&out, openpgp.PrivateKeyType, nil)
+	if err != nil {
+		return "", err
+	}
+	if err := entity.SerializePrivate(enc, nil); err != nil {
+		return "", err
+	}
+	enc.Close()
+	out.Write([]byte{'\n'})
+	return out.String(), nil
 }
