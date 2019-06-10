@@ -6,6 +6,7 @@ import (
 	"crypto"
 	"crypto/ecdsa"
 	"crypto/elliptic"
+	"encoding/hex"
 	"fmt"
 	"io"
 	"math/big"
@@ -206,6 +207,11 @@ func (r *Recovery) run() error {
 	entity.Subkeys[0].PublicKey.IsSubkey = true
 	entity.Subkeys[0].PrivateKey.IsSubkey = true
 
+	// print information about the GPG identity
+	fmt.Fprintln(r.stderr, "User ID:", userID)
+	fmt.Fprintln(r.stderr, "Primary Key:", r.formatFingerprint(entity.PrimaryKey))
+	fmt.Fprintln(r.stderr, "Sub Key:", r.formatFingerprint(entity.Subkeys[0].PublicKey))
+
 	// print the ascii armored private key
 	privKey, err := r.serializePrivate(entity)
 	if err != nil {
@@ -278,4 +284,8 @@ func (r *Recovery) serializePrivate(entity *openpgp.Entity) (string, error) {
 	enc.Close()
 	out.Write([]byte{'\n'})
 	return out.String(), nil
+}
+
+func (r *Recovery) formatFingerprint(key *packet.PublicKey) string {
+	return strings.ToUpper(hex.EncodeToString(key.Fingerprint[:]))
 }

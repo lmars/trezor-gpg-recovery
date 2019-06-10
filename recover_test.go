@@ -67,4 +67,17 @@ func TestRecovery(t *testing.T) {
 	if actualFingerprint != expectedFingerprint {
 		t.Fatalf("wrong fingerprint\nexpected: %s\nactual:   %s", expectedFingerprint, actualFingerprint)
 	}
+
+	// check the entity has one subkey
+	if len(entity.Subkeys) != 1 {
+		t.Fatalf("expected 1 subkey, got %d", len(entity.Subkeys))
+	}
+
+	// check the subkey fingerprint
+	subkey := entity.Subkeys[0]
+	expectedFingerprint = "FB68DCFCBCFA77A5AE451EDDCDEE5FEA25BB09F8"
+	actualFingerprint = strings.ToUpper(hex.EncodeToString(subkey.PublicKey.Fingerprint[:]))
+	if actualFingerprint != expectedFingerprint {
+		t.Fatalf("wrong fingerprint\nexpected: %s\nactual:   %s", expectedFingerprint, actualFingerprint)
+	}
 }
