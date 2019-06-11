@@ -15,13 +15,13 @@ import (
 	"strings"
 	"time"
 
-	"github.com/keybase/go-crypto/openpgp"
-	"github.com/keybase/go-crypto/openpgp/armor"
-	"github.com/keybase/go-crypto/openpgp/ecdh"
-	"github.com/keybase/go-crypto/openpgp/packet"
 	slip10 "github.com/lmars/go-slip10"
 	slip13 "github.com/lmars/go-slip13"
 	bip39 "github.com/tyler-smith/go-bip39"
+	"golang.org/x/crypto/openpgp"
+	"golang.org/x/crypto/openpgp/armor"
+	"golang.org/x/crypto/openpgp/packet"
+	"golang.org/x/crypto/openpgp/s2k"
 	"golang.org/x/crypto/ssh/terminal"
 )
 
@@ -182,17 +182,11 @@ func (r *Recovery) run() error {
 			},
 		},
 	}
-	ecdhPubKey := ecdh.PublicKey{
-		Curve: subKey.PublicKey.Curve,
-		X:     subKey.PublicKey.X,
-		Y:     subKey.PublicKey.Y,
-	}
+	kdfHash, _ := s2k.HashToHashId(crypto.SHA256)
+	kdfAlgo := packet.CipherAES128
 	entity.Subkeys = []openpgp.Subkey{{
-		PublicKey: packet.NewECDHPublicKey(timestamp, &ecdhPubKey),
-		PrivateKey: packet.NewECDHPrivateKey(timestamp, &ecdh.PrivateKey{
-			PublicKey: ecdhPubKey,
-			X:         subKey.D,
-		}),
+		PublicKey:  packet.NewECDHPublicKey(timestamp, &subKey.PublicKey, kdfHash, kdfAlgo),
+		PrivateKey: packet.NewECDHPrivateKey(timestamp, subKey, kdfHash, kdfAlgo),
 		Sig: &packet.Signature{
 			CreationTime:              timestamp,
 			SigType:                   packet.SigTypeSubkeyBinding,

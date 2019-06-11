@@ -7,9 +7,9 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/keybase/go-crypto/openpgp"
-	"github.com/keybase/go-crypto/openpgp/armor"
-	"github.com/keybase/go-crypto/openpgp/packet"
+	"golang.org/x/crypto/openpgp"
+	"golang.org/x/crypto/openpgp/armor"
+	"golang.org/x/crypto/openpgp/packet"
 )
 
 func TestRecovery(t *testing.T) {
@@ -75,7 +75,7 @@ func TestRecovery(t *testing.T) {
 
 	// check the subkey fingerprint
 	subkey := entity.Subkeys[0]
-	expectedFingerprint = "FB68DCFCBCFA77A5AE451EDDCDEE5FEA25BB09F8"
+	expectedFingerprint = "CBE715CAA0E83224AC8F98E5CDF28C7D36F3F4F5"
 	actualFingerprint = strings.ToUpper(hex.EncodeToString(subkey.PublicKey.Fingerprint[:]))
 	if actualFingerprint != expectedFingerprint {
 		t.Fatalf("wrong fingerprint\nexpected: %s\nactual:   %s", expectedFingerprint, actualFingerprint)
