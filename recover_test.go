@@ -15,11 +15,15 @@ import (
 func TestRecovery(t *testing.T) {
 	var stdin, stdout, stderr bytes.Buffer
 
-	// enter the User ID:
+	// confirm
+	fmt.Fprintln(&stdin, "yes")
+	// enter the User ID
 	userID := "Alice <alice@example.com>"
 	fmt.Fprintln(&stdin, userID)
 	// enter the timestamp
 	fmt.Fprintln(&stdin, "1523060353")
+	// enter the seed length
+	fmt.Fprintln(&stdin, "12")
 	// enter the 12 work mnemonic:
 	fmt.Fprintln(&stdin, "all\nall\nall\nall\nall\nall\nall\nall\nall\nall\nall\nall")
 	// enter the passphrase:
@@ -27,8 +31,6 @@ func TestRecovery(t *testing.T) {
 
 	// run the recovery
 	if err := Run(
-		WithSeedLength(12),
-		UsePassphrase(true),
 		WithStdin(&stdin),
 		WithStdout(&stdout),
 		WithStderr(&stderr),

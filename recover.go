@@ -7,6 +7,7 @@ import (
 	"crypto/ecdsa"
 	"crypto/elliptic"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"io"
 	"math/big"
@@ -22,58 +23,31 @@ import (
 	"golang.org/x/crypto/openpgp/armor"
 	"golang.org/x/crypto/openpgp/packet"
 	"golang.org/x/crypto/openpgp/s2k"
-	"golang.org/x/crypto/ssh/terminal"
 )
-
-// DefaultSeedLength is the default value for the expected length of the
-// recovery seed.
-const DefaultSeedLength = 24
 
 // Run recovers a Trezor GPG identity by reading a recovery seed from stdin and
 // writing the resulting identity to stdout.
 func Run(opts ...Option) error {
 	r := &Recovery{
-		stdin:      os.Stdin,
-		stdout:     os.Stdout,
-		stderr:     os.Stderr,
-		seedLength: DefaultSeedLength,
+		stdin:  os.Stdin,
+		stdout: os.Stdout,
+		stderr: os.Stderr,
 	}
 	for _, opt := range opts {
 		opt(r)
-	}
-	if err := r.validate(); err != nil {
-		return err
-	}
-	if f, ok := r.stdin.(*os.File); ok && terminal.IsTerminal(int(f.Fd())) {
-		r.isInteractive = true
 	}
 	r.stdinScan = bufio.NewScanner(r.stdin)
 	return r.run()
 }
 
 type Recovery struct {
-	stdin         io.Reader
-	stdinScan     *bufio.Scanner
-	stdout        io.Writer
-	stderr        io.Writer
-	seedLength    int
-	isInteractive bool
-	usePassphrase bool
+	stdin     io.Reader
+	stdinScan *bufio.Scanner
+	stdout    io.Writer
+	stderr    io.Writer
 }
 
 type Option func(*Recovery)
-
-func WithSeedLength(seedLength int) Option {
-	return func(r *Recovery) {
-		r.seedLength = seedLength
-	}
-}
-
-func UsePassphrase(usePassphrase bool) Option {
-	return func(r *Recovery) {
-		r.usePassphrase = usePassphrase
-	}
-}
 
 func WithStdin(stdin io.Reader) Option {
 	return func(r *Recovery) {
@@ -94,14 +68,36 @@ func WithStderr(stderr io.Writer) Option {
 }
 
 func (r *Recovery) run() error {
+	// print a warning
+	r.log(`
+-----------------------------------------------------------------------------
+                             Trezor GPG Recovery
+-----------------------------------------------------------------------------
+   WARNING WARNING WARNING WARNING WARNING WARNING WARNING WARNING WARNING
+
+ This program recovers private keys and prints them on the command line. You
+ should only run this in a secure, controlled environment (e.g. Tails
+ running from a USB stick).
+
+   WARNING WARNING WARNING WARNING WARNING WARNING WARNING WARNING WARNING
+-----------------------------------------------------------------------------`)
+
+	// make sure the user wants to continue
+	response, err := r.readLine(`Are you sure you want to continue with the recovery? (yes/no):`)
+	if err != nil {
+		return err
+	} else if response != "yes" {
+		return errors.New("aborting at user's request")
+	}
+
 	// prompt for the user's ID
-	userID, err := r.readLine(`Please enter your GPG User ID (ex: "Alice <alice@example.com>"): `)
+	userID, err := r.readLine(`Please enter your GPG User ID (ex: "Alice <alice@example.com>"):`)
 	if err != nil {
 		return err
 	}
 
 	// prompt for the timestamp
-	timestampStr, err := r.readLine("Please enter the timestamp from the original 'trezor-gpg init' command: ")
+	timestampStr, err := r.readLine("Please enter the timestamp from the original 'trezor-gpg init' command:")
 	if err != nil {
 		return err
 	}
@@ -112,27 +108,32 @@ func (r *Recovery) run() error {
 	timestamp := time.Unix(timestampInt, 0)
 
 	// prompt for the recovery seed
-	if r.isInteractive {
-		r.log("Please enter your %d word recovery seed (hit ctrl-c to exit):", r.seedLength)
+	seedLengthStr, err := r.readLine(`How many words are in your Recovery Seed? (12, 18 or 24):`)
+	if err != nil {
+		return err
 	}
-	seedWords := make([]string, r.seedLength)
-	for i := 0; i < r.seedLength; i++ {
-		prompt := fmt.Sprintf("%2d: ", i+1)
-		word, err := r.readLine(prompt)
+	seedLength, err := strconv.Atoi(seedLengthStr)
+	if err != nil {
+		return err
+	}
+	if seedLength != 12 && seedLength != 18 && seedLength != 24 {
+		return fmt.Errorf("invalid seed length %d: must be 12, 18 or 24", seedLength)
+	}
+	r.log("Please enter your %d word recovery seed (hit ctrl-c to exit):                ", seedLength)
+	seedWords := make([]string, seedLength)
+	for i := 0; i < seedLength; i++ {
+		word, err := r.readWord(i + 1)
 		if err != nil {
 			return err
 		}
 		seedWords[i] = word
 	}
+	r.log(`-----------------------------------------------------------------------------`)
 
 	// prompt for a passphrase
-	var passphrase string
-	if r.usePassphrase {
-		var err error
-		passphrase, err = r.readLine("Please enter your passphrase: ")
-		if err != nil {
-			return err
-		}
+	passphrase, err := r.readLine("Please enter your passphrase (leave blank if you don't use one):")
+	if err != nil {
+		return err
 	}
 
 	// generate seed
@@ -202,9 +203,17 @@ func (r *Recovery) run() error {
 	entity.Subkeys[0].PrivateKey.IsSubkey = true
 
 	// print information about the GPG identity
-	fmt.Fprintln(r.stderr, "User ID:", userID)
-	fmt.Fprintln(r.stderr, "Primary Key:", r.formatFingerprint(entity.PrimaryKey))
-	fmt.Fprintln(r.stderr, "Sub Key:", r.formatFingerprint(entity.Subkeys[0].PublicKey))
+	r.log(`
+GPG User ID:             %s
+
+Primary Key Fingerprint: %s
+
+Subkey Fingerprint:      %s
+`,
+		userID,
+		r.formatFingerprint(entity.PrimaryKey),
+		r.formatFingerprint(entity.Subkeys[0].PublicKey),
+	)
 
 	// print the ascii armored private key
 	privKey, err := r.serializePrivate(entity)
@@ -221,27 +230,16 @@ func (r *Recovery) log(format string, args ...interface{}) {
 }
 
 func (r *Recovery) readLine(prompt string) (string, error) {
-	if r.isInteractive {
-		fmt.Fprintf(r.stderr, prompt)
-	}
+	fmt.Fprintf(r.stderr, "%-77s\n> ", prompt)
+	defer fmt.Fprintln(r.stderr, "-----------------------------------------------------------------------------")
 	r.stdinScan.Scan()
 	return r.stdinScan.Text(), r.stdinScan.Err()
 }
 
-var validSeedLengths = []int{12, 18, 24}
-
-func (r *Recovery) validate() error {
-	validSeedLength := false
-	for _, l := range validSeedLengths {
-		if r.seedLength == l {
-			validSeedLength = true
-			break
-		}
-	}
-	if !validSeedLength {
-		return fmt.Errorf("invalid seed length %d, must be one of %v", r.seedLength, validSeedLengths)
-	}
-	return nil
+func (r *Recovery) readWord(num int) (string, error) {
+	fmt.Fprintf(r.stderr, "%2d: ", num)
+	r.stdinScan.Scan()
+	return r.stdinScan.Text(), r.stdinScan.Err()
 }
 
 func (r *Recovery) ecdsaKey(masterKey *slip10.Key, uri string, ecdh bool) (*ecdsa.PrivateKey, error) {
